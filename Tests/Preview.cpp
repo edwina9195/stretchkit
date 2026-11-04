@@ -240,6 +240,12 @@ int main (int argc, char** argv)
     for (int i = 0; i < kNumThemes; ++i)
     {
         editor->applyTheme ((ThemeId) i);
+        {
+            // pick a kick as the similarity seed, like clicking it on the map
+            const auto snap = p->library->getSnapshot();
+            for (int k = 0; k < (int) snap->size(); ++k)
+                if ((*snap)[(size_t) k].name == "Kick Punch 01") { editor->pickSample (k, false); break; }
+        }
         pump (250);
         auto img = editor->createComponentSnapshot (editor->getLocalBounds(), true, 1.0f);
         auto f = work.getChildFile (juce::String (fileNames[i]) + ".png");
