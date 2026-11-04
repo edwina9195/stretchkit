@@ -1,0 +1,79 @@
+name: Build
+
+on:
+  push:
+    branches: [ main, master ]
+    tags: [ 'v*' ]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write   # needed to attach files to a GitHub Release when you push a v* tag
+
+jobs:
+  build:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: macOS (Universal)
+            os: macos-14
+          - name: Windows (x64)
+            os: windows-2022
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure (macOS, Apple Silicon + Intel)
+        if: runner.os == 'macOS'
+        run: cmake -B build -DCMAKE_BUILD_TYPE=Release -DSTRETCHKIT_BUILD_TESTS=ON "-DCMAKE_OSX_ARCHITECTURES=arm64;x86_64"
+
+      - name: Configure (Windows)
+        if: runner.os == 'Windows'
+        run: cmake -B build -G "Visual Studio 17 2022" -A x64 -DSTRETCHKIT_BUILD_TESTS=ON
+
+      - name: Build
+        run: cmake --build build --config Release --parallel 4
+
+      - name: Run DSP tests
+        shell: bash
+        run: |
+          if [ "$RUNNER_OS" == "Windows" ]; then
+            ./build/StretchKitTests_artefacts/Release/StretchKitTests.exe
+          else
+            ./build/StretchKitTests_artefacts/Release/StretchKitTests
+          fi
+
+      - name: Package (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          cd build/StretchKit_artefacts/Release
+          for b in VST3/StretchKit.vst3 AU/StretchKit.component Standalone/StretchKit.app; do
+            codesign --force --deep --sign - "$b"   # ad-hoc signature (required on Apple Silicon)
+          done
+          mkdir -p "$GITHUB_WORKSPACE/dist"
+          ditto -c -k --keepParent VST3/StretchKit.vst3       "$GITHUB_WORKSPACE/dist/StretchKit-mac-VST3.zip"
+          ditto -c -k --keepParent AU/StretchKit.component    "$GITHUB_WORKSPACE/dist/StretchKit-mac-AU.zip"
+          ditto -c -k --keepParent Standalone/StretchKit.app  "$GITHUB_WORKSPACE/dist/StretchKit-mac-Standalone.zip"
+
+      - name: Package (Windows)
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          mkdir -p dist
+          cd build/StretchKit_artefacts/Release
+          7z a "$GITHUB_WORKSPACE/dist/StretchKit-win-VST3.zip" VST3/StretchKit.vst3
+          7z a "$GITHUB_WORKSPACE/dist/StretchKit-win-Standalone.zip" Standalone/StretchKit.exe
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: StretchKit-${{ runner.os }}
+          path: dist/*.zip
+
+      - name: Attach to GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*.zip
