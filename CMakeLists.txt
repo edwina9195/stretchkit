@@ -3,6 +3,9 @@ cmake_minimum_required(VERSION 3.22)
 # macOS: build for 10.13+ (set before project())
 set(CMAKE_OSX_DEPLOYMENT_TARGET "10.13" CACHE STRING "Minimum macOS version")
 
+# Windows: link the C++ runtime statically so users do not need the VC++ Redistributable
+set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+
 project(StretchKit VERSION 0.1.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 17)
