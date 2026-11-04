@@ -432,7 +432,7 @@ void SampleLibrary::computeLayout (std::vector<SampleEntry>& entries)
         const float phase = 6.2832f * (0.5f + 0.5f * hashJitter (categoryName (cat), 3));
         const float tilt = 0.35f * hashJitter (categoryName (cat), 7);
         const float ct = std::cos (tilt), st = std::sin (tilt);
-        const float grain = 0.55f / std::sqrt ((float) juce::jmax<size_t> (1, m));   // about one dot spacing
+        const float grain = 0.55f / std::sqrt ((float) std::max<size_t> (1, m));   // about one dot spacing
 
         for (size_t i = 0; i < m; ++i)
         {
