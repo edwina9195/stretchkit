@@ -89,7 +89,7 @@ set(STRETCHKIT_CORE_SOURCES
 
 if(STRETCHKIT_BUILD_PLUGIN)
 juce_add_plugin(StretchKit
-    COMPANY_NAME                "StretchKit"
+    COMPANY_NAME                "sxdrv.mp3"
     BUNDLE_ID                   "com.stretchkit.stretchkit"
     PRODUCT_NAME                "StretchKit"
     IS_SYNTH                    TRUE

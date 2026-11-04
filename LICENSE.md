@@ -1,6 +1,6 @@
 # StretchKit — licence
 
-Copyright (C) 2026 the StretchKit authors
+Copyright (C) 2026 sxdrv.mp3 (https://www.instagram.com/sxdrv.mp3/)
 
 StretchKit's own source code is free software: you can redistribute it and/or modify it under
 the terms of the GNU General Public License as published by the Free Software Foundation, either
