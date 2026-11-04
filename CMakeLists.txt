@@ -84,6 +84,7 @@ set(STRETCHKIT_UI_SOURCES
     Source/PluginEditor.cpp
     Source/ui/Theme.cpp
     Source/ui/MapView.cpp
+    Source/ui/SimilarityBar.cpp
     Source/ui/TrackRow.cpp)
 
 set(STRETCHKIT_CORE_SOURCES
@@ -146,7 +147,7 @@ if(STRETCHKIT_BUILD_TESTS)
 endif()
 
 if(STRETCHKIT_BUILD_HOST_TEST AND STRETCHKIT_BUILD_PLUGIN)
-    foreach(app StretchKitHostTest StretchKitPreview)
+    foreach(app StretchKitHostTest StretchKitPreview StretchKitStress)
         juce_add_console_app(${app} PRODUCT_NAME "${app}")
         target_sources(${app} PRIVATE ${STRETCHKIT_CORE_SOURCES} ${STRETCHKIT_UI_SOURCES})
         target_include_directories(${app} PRIVATE Source)
@@ -158,4 +159,5 @@ if(STRETCHKIT_BUILD_HOST_TEST AND STRETCHKIT_BUILD_PLUGIN)
     endforeach()
     target_sources(StretchKitHostTest PRIVATE Tests/HostTest.cpp)
     target_sources(StretchKitPreview PRIVATE Tests/Preview.cpp)
+    target_sources(StretchKitStress PRIVATE Tests/Stress.cpp)
 endif()

@@ -158,7 +158,7 @@ int main (int argc, char** argv)
             const bool expectKick = e.name.containsIgnoreCase ("kick") || e.name == "BD_02" || e.name == "mystery hit";
             const auto expected = expectKick ? Category::Kick
                                 : e.name.containsIgnoreCase ("snare") ? Category::Snare : Category::HiHat;
-            check (e.category == expected && e.x > 0.0f && e.x < 1.0f && e.y > 0.0f && e.y < 1.0f,
+            check (e.category == expected && e.x > 0.0f && e.x < kWorldW && e.y > 0.0f && e.y < 1.0f,
                    e.name + " -> " + categoryName (e.category) + " at (" + juce::String (e.x, 2) + ", " + juce::String (e.y, 2) + ")");
         }
 
@@ -238,6 +238,27 @@ int main (int argc, char** argv)
             writeWav (work.getChildFile ("out_kick_" + juce::String ((int) pct) + ".wav"), o, sr);
         }
 
+        std::cout << "Clicking a track plays its own stretched sound\n";
+        {
+            int lens[2] = { 0, 0 };
+            const float pcts[2] = { 200.0f, 50.0f };
+            for (int k = 0; k < 2; ++k)
+            {
+                setParam (*p, "len0", pcts[k]);
+                p->auditionTrack (0);                // like releasing the LENGTH slider / clicking the track
+                waitForRenders (*p);
+                auto o = render (*p, (int) (sr * 1.5), 512);
+                lens[k] = audibleLength (o);
+                render (*p, 48000, 512);
+            }
+            const double ratio = lens[1] > 0 ? (double) lens[0] / lens[1] : 0.0;
+            check (std::abs (ratio - 4.0) < 0.5, "200% vs 50% audition lengths " + juce::String (lens[0]) + " / "
+                                                   + juce::String (lens[1]) + " (ratio " + juce::String (ratio, 2) + ", expect 4)");
+            setParam (*p, "len0", 50.0f);
+            pump (100);
+            waitForRenders (*p);
+        }
+
         std::cout << "State save / restore\n";
         p->setStep (5, 7, 2);
         juce::MemoryBlock state;
@@ -271,11 +292,23 @@ int main (int argc, char** argv)
             f.deleteFile();
             juce::FileOutputStream os (f);
             png.writeImageToStream (img, os);
-            check (img.getWidth() == 1120 && img.getHeight() == 800, "editor snapshot written to editor.png");
+            check (img.getWidth() >= 1000 && img.getHeight() >= 780, "editor snapshot written to editor.png");
         }
 
         q.reset();
         p.reset();
+    }
+
+    std::cout << "Library is remembered after closing\n";
+    {
+        for (int i = 0; i < 50; ++i) pump (20);   // let background saves finish
+        auto again = std::make_unique<StretchKitProcessor>();
+        for (int i = 0; i < 200 && ! again->library->isLoaded(); ++i)
+            pump (10);
+        const auto snap = again->library->getSnapshot();
+        check (snap->size() == 5 && ! again->library->isScanning() && again->library->getFolders().size() == 1,
+               "reopened: " + juce::String ((int) snap->size()) + " samples, folders " + juce::String (again->library->getFolders().size())
+               + (again->library->isScanning() ? ", scanning (unexpected)" : ", no rescan"));
     }
 
     std::cout << (failures == 0 ? "\nALL PASSED\n" : "\nFAILURES: " + std::to_string (failures) + "\n");

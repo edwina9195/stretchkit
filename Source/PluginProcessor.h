@@ -66,6 +66,13 @@ public:
 
     void previewFile (const juce::String& path);
 
+    /** Plays the track's own (pitched + stretched) sound once, after any pending re-render. */
+    void auditionTrack (int track);
+
+    int  getEditorWidth() const noexcept  { return editorW.load(); }
+    int  getEditorHeight() const noexcept { return editorH.load(); }
+    void setEditorSize (int w, int h) noexcept { editorW = w; editorH = h; }
+
     int  getStep (int track, int step) const noexcept { return steps[(size_t) (track * kMaxSteps + step)].load(); }
     void setStep (int track, int step, int value) noexcept { steps[(size_t) (track * kMaxSteps + step)] = (uint8_t) value; }
     void clearTrackSteps (int track) noexcept;
@@ -105,6 +112,7 @@ private:
     RenderedSample* addToPool (juce::AudioBuffer<float>&& buffer);
     double stepBeats() const;
     RenderSettings settingsFor (int track) const;
+    void checkRenderNeeded (int track);
 
     struct Voice
     {
@@ -148,13 +156,16 @@ private:
     std::atomic<int> currentStep { -1 };
     std::atomic<bool> hostPlaying { false }, internalPlaying { false }, resetInternalClock { false };
     std::atomic<double> displayBpm { 120.0 };
+    std::array<std::atomic<bool>, kNumTracks> auditionPending {};
+    std::atomic<int> editorW { 0 }, editorH { 0 };
     std::atomic<int> themeIndex { 3 };   // 0 PS2 Night, 1 Y2K Chrome, 2 Digicore, 3 Mix, 4 Liquid Chrome
 
     // Audio-thread only
     std::array<RenderedSample::Ptr, kNumTracks> active;
     std::array<std::array<Voice, kVoicesPerTrack>, kNumTracks> voices;
-    RenderedSample::Ptr previewSample;
-    int previewPos = 0;
+    RenderedSample::Ptr previewSample, previewOld;
+    int previewPos = 0, previewOldPos = 0, previewOldFade = 0;
+    static constexpr int kPreviewFade = 256;
     double internalPpq = 0.0;
     double lastPpqEnd = -1.0;
     juce::int64 lastStepIndex = std::numeric_limits<juce::int64>::min();

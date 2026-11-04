@@ -40,8 +40,12 @@ public:
             {
                 didWork = true;
                 Source s;
-                if (load (preview, s))
-                    owner.publishPreview (DrumStretcher::resample (s.buffer, s.rate / owner.currentSampleRate.load()));
+                if (load (preview, s, 6.0))
+                {
+                    const double ratio = s.rate / owner.currentSampleRate.load();
+                    owner.publishPreview (std::abs (ratio - 1.0) < 1.0e-6 ? std::move (s.buffer)
+                                                                          : DrumStretcher::resample (s.buffer, ratio));
+                }
             }
 
             for (int t = 0; t < kNumTracks && ! threadShouldExit(); ++t)
@@ -91,13 +95,13 @@ private:
         double rate = 44100.0;
     };
 
-    bool load (const juce::String& path, Source& s)
+    bool load (const juce::String& path, Source& s, double maxSeconds = 20.0)
     {
         std::unique_ptr<juce::AudioFormatReader> reader (formats.createReaderFor (juce::File (path)));
         if (reader == nullptr || reader->sampleRate <= 0.0)
             return false;
 
-        const auto n = (int) std::min<juce::int64> (reader->lengthInSamples, (juce::int64) (20.0 * reader->sampleRate));
+        const auto n = (int) std::min<juce::int64> (reader->lengthInSamples, (juce::int64) (maxSeconds * reader->sampleRate));
         s.buffer.setSize ((int) juce::jlimit (1u, 2u, reader->numChannels), n);
         reader->read (&s.buffer, 0, n, 0, true, true);
         s.rate = reader->sampleRate;
@@ -372,21 +376,32 @@ void StretchKitProcessor::publishPreview (juce::AudioBuffer<float>&& buffer)
         old->taken = true;
 }
 
+void StretchKitProcessor::checkRenderNeeded (int t)
+{
+    const auto s = settingsFor (t);
+    auto& last = lastRequested[(size_t) t];
+    const auto differs = [] (double a, double b) { return std::abs (a - b) > 1.0e-6; };
+    if (differs (s.targetRate, last.targetRate) || differs (s.pitchSemitones, last.pitchSemitones)
+        || differs (s.lengthPercent, last.lengthPercent) || s.mode != last.mode)
+    {
+        last = s;
+        requestRender (t);
+    }
+}
+
+void StretchKitProcessor::auditionTrack (int track)
+{
+    if (! juce::isPositiveAndBelow (track, kNumTracks))
+        return;
+    checkRenderNeeded (track);          // a slider that was just released may not have been picked up yet
+    auditionPending[(size_t) track] = true;
+}
+
 void StretchKitProcessor::timerCallback()
 {
     // Re-render a track when its pitch / length / mode or the host sample rate changes.
     for (int t = 0; t < kNumTracks; ++t)
-    {
-        const auto s = settingsFor (t);
-        auto& last = lastRequested[(size_t) t];
-        const auto differs = [] (double a, double b) { return std::abs (a - b) > 1.0e-6; };
-        if (differs (s.targetRate, last.targetRate) || differs (s.pitchSemitones, last.pitchSemitones)
-            || differs (s.lengthPercent, last.lengthPercent) || s.mode != last.mode)
-        {
-            last = s;
-            requestRender (t);
-        }
-    }
+        checkRenderNeeded (t);
 
     // Fresh instance + scanned library: load a random starter kit.
     if (freshInstance)
@@ -472,6 +487,13 @@ void StretchKitProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::
 
     if (auto* p = pendingPreview.exchange (nullptr))
     {
+        // fade the previous preview out instead of cutting it (no clicks while scrubbing the map)
+        if (previewSample != nullptr && previewPos < previewSample->buffer.getNumSamples())
+        {
+            previewOld = previewSample;
+            previewOldPos = previewPos;
+            previewOldFade = kPreviewFade;
+        }
         previewSample = p;
         p->taken = true;
         previewPos = 0;
@@ -483,6 +505,16 @@ void StretchKitProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::
         if (numEvents < kMaxEvents)
             events[(size_t) numEvents++] = { offset, track, vel };
     };
+
+    // track auditions from the editor, once the track's newest render is in place
+    for (int t = 0; t < kNumTracks; ++t)
+        if (auditionPending[(size_t) t].load()
+            && requestVersion[(size_t) t].load() == renderedVersion[(size_t) t].load()
+            && pending[(size_t) t].load() == nullptr)
+        {
+            auditionPending[(size_t) t] = false;
+            addEvent (0, t, 1.0f);
+        }
 
     // MIDI: C1.. triggers tracks
     for (const auto meta : midi)
@@ -639,6 +671,18 @@ void StretchKitProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::
             }
         }
 
+        if (previewOld != nullptr && previewOldFade > 0 && previewOldPos < previewOld->buffer.getNumSamples())
+        {
+            const auto& b = previewOld->buffer;
+            const float g = 0.8f * master * (float) previewOldFade / (float) kPreviewFade;
+            const float s0 = b.getSample (0, previewOldPos);
+            const float s1 = b.getNumChannels() > 1 ? b.getSample (1, previewOldPos) : s0;
+            l += s0 * g;
+            r += s1 * g;
+            ++previewOldPos;
+            --previewOldFade;
+        }
+
         if (previewSample != nullptr && previewPos < previewSample->buffer.getNumSamples())
         {
             const auto& b = previewSample->buffer;
@@ -668,6 +712,8 @@ void StretchKitProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::
 
     if (previewSample != nullptr && previewPos >= previewSample->buffer.getNumSamples())
         previewSample = nullptr;
+    if (previewOld != nullptr && (previewOldFade <= 0 || previewOldPos >= previewOld->buffer.getNumSamples()))
+        previewOld = nullptr;
 }
 
 //==============================================================================
@@ -719,6 +765,8 @@ void StretchKitProcessor::getStateInformation (juce::MemoryBlock& destData)
     state.appendChild (pattern, nullptr);
 
     state.setProperty ("theme", themeIndex.load(), nullptr);
+    state.setProperty ("editorW", editorW.load(), nullptr);
+    state.setProperty ("editorH", editorH.load(), nullptr);
 
     juce::ValueTree tracks ("TRACKS");
     for (int t = 0; t < kNumTracks; ++t)
@@ -751,6 +799,10 @@ void StretchKitProcessor::setStateInformation (const void* data, int sizeInBytes
         themeIndex = juce::jlimit (0, 4, (int) tree["theme"]);
         tree.removeProperty ("theme", nullptr);
     }
+    editorW = (int) tree.getProperty ("editorW", 0);
+    editorH = (int) tree.getProperty ("editorH", 0);
+    tree.removeProperty ("editorW", nullptr);
+    tree.removeProperty ("editorH", nullptr);
 
     if (auto pattern = tree.getChildWithName ("PATTERN"); pattern.isValid())
     {

@@ -56,23 +56,27 @@ inline juce::uint32 categoryArgb (Category c)
     }
 }
 
-/** Centre of each category's island on the 0..1 map. */
+/** The sample map lives in a "world" of kWorldW x 1 units; the view keeps that aspect. */
+constexpr float kWorldW = 2.4f;
+
 struct MapPoint { float x, y; };
 
+/** Where each category's cloud is centred (world units). Neighbouring clouds overlap at their edges,
+    which gives one organic map instead of separate boxes. */
 inline MapPoint categoryCentre (Category c)
 {
     switch (c)
     {
-        case Category::Kick:   return { 0.18f, 0.22f };
-        case Category::Snare:  return { 0.50f, 0.20f };
-        case Category::Clap:   return { 0.82f, 0.22f };
-        case Category::Tom:    return { 0.18f, 0.55f };
-        case Category::Perc:   return { 0.50f, 0.55f };
-        case Category::HiHat:  return { 0.82f, 0.55f };
-        case Category::Other:  return { 0.30f, 0.85f };
-        case Category::Cymbal: return { 0.72f, 0.85f };
+        case Category::Kick:   return { 0.45f, 0.55f };
+        case Category::Tom:    return { 0.86f, 0.70f };
+        case Category::Snare:  return { 1.05f, 0.34f };
+        case Category::Perc:   return { 1.30f, 0.72f };
+        case Category::Clap:   return { 1.46f, 0.30f };
+        case Category::HiHat:  return { 1.82f, 0.42f };
+        case Category::Other:  return { 1.64f, 0.80f };
+        case Category::Cymbal: return { 2.06f, 0.64f };
         case Category::NumCategories:
-        default:               return { 0.5f, 0.5f };
+        default:               return { 1.2f, 0.5f };
     }
 }
 

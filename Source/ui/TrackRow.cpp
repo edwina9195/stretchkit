@@ -218,6 +218,10 @@ TrackRow::TrackRow (StretchKitProcessor& p, int trackIndex, juce::Component& pop
     pitchAtt = std::make_unique<SliderAttachment> (processor.apvts, "pitch" + id, pitch);
     lenAtt   = std::make_unique<SliderAttachment> (processor.apvts, "len" + id, length);
 
+    // hear the result as soon as a pitch / length change has been rendered
+    pitch.onDragEnd  = [this] { processor.auditionTrack (index); };
+    length.onDragEnd = [this] { processor.auditionTrack (index); };
+
     volume.setDoubleClickReturnValue (true, 0.0);
     pan.setDoubleClickReturnValue (true, 0.0);
     pitch.setDoubleClickReturnValue (true, 0.0);
@@ -397,9 +401,7 @@ void TrackRow::mouseDown (const juce::MouseEvent& e)
     {
         if (onSelect)
             onSelect (index);
-        const auto path = processor.getTrackPath (index);
-        if (path.isNotEmpty())
-            processor.previewFile (path);
+        processor.auditionTrack (index);   // the track's own pitched + stretched sound
     }
 }
 

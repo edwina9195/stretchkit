@@ -2,6 +2,7 @@
 
 #include "PluginProcessor.h"
 #include "ui/MapView.h"
+#include "ui/SimilarityBar.h"
 #include "ui/Theme.h"
 #include "ui/TrackRow.h"
 
@@ -44,6 +45,9 @@ public:
     void paintOverChildren (juce::Graphics&) override;
     void resized() override;
 
+    /** Listens to a library sound and makes it the similarity seed (what a map click does). */
+    void pickSample (int index, bool fromScrub);
+
     /** Switches the skin (also remembered in the plugin state). */
     void applyTheme (sk::ThemeId id);
 
@@ -54,6 +58,8 @@ private:
     void chooseFolder();
     void showFolderMenu();
     void updateStatus();
+    void updateMapSelection();
+    void applyFilter();
     void paintBackground (juce::Graphics&, const sk::Theme&);
     void paintTitle (juce::Graphics&, const sk::Theme&);
 
@@ -69,6 +75,11 @@ private:
 
     // map
     sk::MapView map;
+    juce::TextEditor searchBox;
+    juce::TextButton favButton { "Favourites" };
+    sk::SimilarityBar simBar;
+    sk::LibrarySnapshot shownSnapshot;
+    juce::String seedPath;
 
     // transport
     juce::TextButton playButton { "Play" };

@@ -114,11 +114,38 @@ StretchKitEditor::StretchKitEditor (StretchKitProcessor& p)
     }
 
     // ---- map
-    map.onPreview = [this] (const juce::String& path) { processor.previewFile (path); };
-    map.onAssign  = [this] (const juce::String& path) { processor.setTrackSample (selectedTrack, path); };
-    map.setTooltip ("Click: listen   Drag onto a track: load   Double-click: load into selected track\n"
-                    "Alt + move: listen while hovering   Wheel: zoom   Drag empty space: pan");
+    map.onPick   = [this] (int index, bool fromScrub) { pickSample (index, fromScrub); };
+    map.onAssign = [this] (const juce::String& path) { processor.setTrackSample (selectedTrack, path); };
+    map.setTooltip ("Click: listen   Click and drag: hear every sound you pass   Drag out onto a track: load it\n"
+                    "Double-click: load into the selected track   Wheel / pinch: zoom   Cmd-drag or right-drag: move");
     addAndMakeVisible (map);
+
+    searchBox.setTextToShowWhenEmpty ("Search", juce::Colours::grey);
+    searchBox.setTooltip ("Show only sounds whose file name contains these words");
+    searchBox.onTextChange = [this] { applyFilter(); };
+    searchBox.onEscapeKey  = [this] { searchBox.clear(); applyFilter(); };
+    addAndMakeVisible (searchBox);
+
+    favButton.setClickingTogglesState (true);
+    favButton.setTooltip ("Show only the sounds you marked with the heart");
+    favButton.onClick = [this] { applyFilter(); };
+    addAndMakeVisible (favButton);
+
+    simBar.onAudition = [this] (int index)
+    {
+        if (shownSnapshot != nullptr && juce::isPositiveAndBelow (index, (int) shownSnapshot->size()))
+            processor.previewFile ((*shownSnapshot)[(size_t) index].path);
+    };
+    simBar.onSeedChanged = [this] (int index)
+    {
+        if (shownSnapshot != nullptr && juce::isPositiveAndBelow (index, (int) shownSnapshot->size()))
+            seedPath = (*shownSnapshot)[(size_t) index].path;
+    };
+    simBar.onSelectionChanged = [this] { updateMapSelection(); };
+    simBar.isFavourite  = [this] (const juce::String& path) { return processor.library->isFavourite (path); };
+    simBar.setFavourite = [this] (const juce::String& path, bool f) { processor.library->setFavourite (path, f); };
+    simBar.onLoad = [this] (const juce::String& path) { processor.setTrackSample (selectedTrack, path); processor.auditionTrack (selectedTrack); };
+    addAndMakeVisible (simBar);
 
     // ---- transport
     auto setupLabel = [this] (juce::Label& l, const juce::String& text)
@@ -181,12 +208,16 @@ StretchKitEditor::StretchKitEditor (StretchKitProcessor& p)
     selectTrack (0);
 
     processor.library->addChangeListener (this);
-    map.setSnapshot (processor.library->getSnapshot());
+    shownSnapshot = processor.library->getSnapshot();
+    map.setSnapshot (shownSnapshot);
 
     applyTheme ((ThemeId) processor.getThemeIndex());
     updateStatus();
 
-    setSize (1120, 800);
+    setResizable (true, true);
+    setResizeLimits (1000, 780, 2800, 1900);
+    const int w = processor.getEditorWidth(), h = processor.getEditorHeight();
+    setSize (w >= 1000 ? w : 1180, h >= 780 ? h : 900);
     startTimerHz (30);
 }
 
@@ -207,6 +238,19 @@ void StretchKitEditor::applyTheme (ThemeId id)
     skinBox.setSelectedId ((int) id + 1, juce::dontSendNotification);
     StretchKitProcessor::saveDefaultSkin ((int) id);
     skinLabel.setFont (t.font (Theme::Role::Label, 12.0f));
+
+    const bool lightSkin = id == ThemeId::Y2KChrome;
+    searchBox.setFont (t.font (Theme::Role::UI, 15.0f));
+    searchBox.setIndents (12, 4);
+    searchBox.setColour (juce::TextEditor::backgroundColourId,
+                         lightSkin ? juce::Colours::white.withAlpha (0.85f)
+                                   : id == ThemeId::Liquid ? juce::Colour (0xff1d1e6e).withAlpha (0.7f) : t.panel.darker (0.2f));
+    searchBox.setColour (juce::TextEditor::textColourId, t.text);
+    searchBox.setColour (juce::TextEditor::outlineColourId, t.panelEdge.withAlpha (0.6f));
+    searchBox.setColour (juce::TextEditor::focusedOutlineColourId, t.accent);
+    searchBox.setColour (juce::CaretComponent::caretColourId, t.accent);
+    searchBox.setTextToShowWhenEmpty ("Search", t.textDim);
+    searchBox.applyFontToAllText (t.font (Theme::Role::UI, 15.0f));
     skinLabel.setColour (juce::Label::textColourId, t.textDim);
 
     for (auto* l : { &bpmLabel, &stepsLabel, &rateLabel, &swingLabel, &modeLabel, &masterLabel })
@@ -495,7 +539,15 @@ void StretchKitEditor::resized()
     skinBox.setBounds (header.removeFromLeft (132).withSizeKeepingCentre (132, 26));
 
     area.removeFromTop (8);
-    map.setBounds (area.removeFromTop (icons ? 298 : 314));
+    const int rowH = 44;
+    const int below = 6 + 42 + 12 + 32 + 8 + 18 + rowH * kNumTracks;
+    auto mapBounds = area.removeFromTop (juce::jmax (220, area.getHeight() - below));
+    map.setBounds (mapBounds);
+    const int searchW = juce::jmin (320, mapBounds.getWidth() / 3);
+    searchBox.setBounds (mapBounds.getCentreX() - searchW / 2, mapBounds.getY() + (t.id == ThemeId::Digicore ? 24 : 8), searchW, 26);
+    favButton.setBounds (searchBox.getRight() + 8, searchBox.getY(), 100, 26);
+    area.removeFromTop (6);
+    simBar.setBounds (area.removeFromTop (42));
     area.removeFromTop (12);
 
     auto transport = area.removeFromTop (32);
@@ -519,7 +571,6 @@ void StretchKitEditor::resized()
     area.removeFromTop (8);
     trackHeaderArea = area.removeFromTop (18);
     tracksArea = area;
-    const int rowH = area.getHeight() / kNumTracks;
     for (auto& row : rows)
         row->setBounds (area.removeFromTop (rowH));
 }
@@ -578,9 +629,42 @@ void StretchKitEditor::updateStatus()
 
 void StretchKitEditor::changeListenerCallback (juce::ChangeBroadcaster*)
 {
-    map.setSnapshot (processor.library->getSnapshot());
+    const auto snap = processor.library->getSnapshot();
+    if (snap != shownSnapshot)
+    {
+        shownSnapshot = snap;
+        map.setSnapshot (snap);
+
+        // keep the similarity seed when the library is refreshed
+        int seedIndex = -1;
+        if (seedPath.isNotEmpty())
+            for (int i = 0; i < (int) snap->size(); ++i)
+                if ((*snap)[(size_t) i].path == seedPath) { seedIndex = i; break; }
+        if (seedIndex >= 0) simBar.setSeed (snap, seedIndex, false);
+        else                simBar.clear();
+    }
     map.setHighlightedPath (processor.getTrackPath (selectedTrack));
     updateStatus();
+}
+
+void StretchKitEditor::pickSample (int index, bool)
+{
+    if (shownSnapshot == nullptr || ! juce::isPositiveAndBelow (index, (int) shownSnapshot->size()))
+        return;
+    processor.previewFile ((*shownSnapshot)[(size_t) index].path);
+    seedPath = (*shownSnapshot)[(size_t) index].path;
+    simBar.setSeed (shownSnapshot, index, true);
+}
+
+void StretchKitEditor::updateMapSelection()
+{
+    map.setSelection (simBar.getSeed(), simBar.getNeighbours(), simBar.getCurrent());
+}
+
+void StretchKitEditor::applyFilter()
+{
+    map.setFilter (searchBox.getText(), favButton.getToggleState(),
+                   [lib = &processor.library.getObject()] (const juce::String& p) { return lib->isFavourite (p); });
 }
 
 void StretchKitEditor::timerCallback()
@@ -599,6 +683,8 @@ void StretchKitEditor::timerCallback()
 
     if (++statusTick % 10 == 0)
         updateStatus();
+
+    processor.setEditorSize (getWidth(), getHeight());
 
     map.setHighlightedPath (processor.getTrackPath (selectedTrack));
 }
