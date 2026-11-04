@@ -1,6 +1,6 @@
 # StretchKit
 
-**Made by [@sxdrv.mp3](https://www.instagram.com/sxdrv.mp3/)** · [Download (Releases)](https://github.com/edwina9195/stretchkit/releases/latest)
+**Made by [@sxdrv.mp3](https://www.instagram.com/sxdrv.mp3/)** · [Download (Releases)](https://github.com/edwina9195/stretchkit/releases/latest) · Manual: [English](docs/manual/StretchKit_Manual_EN.pdf) / [한국어](docs/manual/StretchKit_Manual_KO.pdf)
 
 드럼 샘플을 **소리 특성별로 자동 분류해 지도에 펼쳐 보여주고**, 각 샘플의 길이를 **원본 대비 %로 타임스트레치**하며, **스텝 시퀀서**로 바로 비트를 찍을 수 있는 무료 오픈소스 드럼 플러그인입니다.
 
